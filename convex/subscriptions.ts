@@ -29,6 +29,7 @@ export const subscribeUser = mutation({
     return { success: true };
   },
 });
+
 // Unsubscribe user
 export const unsubscribeUser = mutation({
   args: { userId: v.string() },
@@ -59,7 +60,7 @@ export const getByUserId = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("subscriptions")
-      .filter((q) => q.eq(q.field("userId"), args.userId))
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .first();
   },
 });
@@ -74,7 +75,7 @@ export const setUserTargets = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("subscriptions")
-      .filter((q) => q.eq(q.field("userId"), args.userId))
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .first();
 
     if (existing) {

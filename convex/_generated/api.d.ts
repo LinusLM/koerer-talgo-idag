@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as processSnapshot from "../processSnapshot.js";
 import type * as push from "../push.js";
 import type * as subscriptions from "../subscriptions.js";
 
@@ -18,6 +19,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  processSnapshot: typeof processSnapshot;
   push: typeof push;
   subscriptions: typeof subscriptions;
 }>;

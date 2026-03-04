@@ -5,7 +5,7 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import PushNotifications from "@/components/PushNotifications";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { STATIONS } from "@/stationNames";
+import { STATIONS } from "@/lib/stationNames";
 
 function setCookie(name: string, value: string, days = 365) {
   const expires = new Date(Date.now() + days * 864e5).toUTCString();

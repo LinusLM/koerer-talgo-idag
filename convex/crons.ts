@@ -4,10 +4,8 @@ import { internal } from "./_generated/api";
 const crons = cronJobs();
 
 crons.interval(
-    "clear messages table",
-    { minutes: 1 }, // every minute
-    internal.
-);
+    "Does this work=", {minutes: 5}, internal.snapshot.fetchAndProcessSnapshot
+)
 
 
 

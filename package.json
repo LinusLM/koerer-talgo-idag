@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "dev:pwa": "next dev & ngrok http 3000",
-    "dev:https": "next dev --experimental-https",
+    "dev:https": "next dev --experimental-https --webpack",
     "test": "vitest"
   },
   "dependencies": {

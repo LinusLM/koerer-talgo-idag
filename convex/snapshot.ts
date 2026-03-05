@@ -1,46 +1,80 @@
+"use node";
+
 import { internalAction } from "./_generated/server";
 import WebSocket from "ws";
 import { internal } from "./_generated/api";
 
+const DEBUG = process.env.DEBUG_MITTOG === "true";
+const log = (...args: any[]) => {
+  if (DEBUG) console.log("[snapshot]", ...args);
+};
+
 export const fetchAndProcessSnapshot = internalAction({
-    handler: async (ctx) => {
-        return new Promise<void>((resolve, reject) => {
-            const ws = new WebSocket(
-                "wss://api.mittog.dk/api/ws/departure/KH/"
-            );
+  handler: async (ctx) => {
+    log("Starting websocket connection");
 
-            let handled = false;
+    return new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(
+        "wss://api.mittog.dk/api/ws/departure/KH/"
+      );
 
-            ws.on("message", async (data) => {
-                if (handled) return; // safety guard
-                handled = true;
+      let handled = false;
 
-                try {
-                    const snapshot = JSON.parse(data.toString());
+      ws.on("open", () => {
+        log("Websocket connected");
+      });
 
-                    await ctx.runMutation(
-                        internal.processSnapshot.processSnapshot,
-                        { stationId: "KH", snapshot }
-                    );
+      ws.on("message", async (data) => {
+        if (handled) {
+          log("Ignoring extra snapshot");
+          return;
+        }
 
-                    ws.close();
-                    resolve();
-                } catch (err) {
-                    reject(err);
-                }
-            });
+        handled = true;
+        log("Received snapshot");
 
-            ws.on("error", (err) => {
-                reject(err);
-            });
+        try {
+          const snapshot = JSON.parse(data.toString());
 
-            // Safety timeout (in case no message arrives)
-            setTimeout(() => {
-                if (!handled) {
-                    ws.close();
-                    resolve();
-                }
-            }, 8000);
-        });
-    },
+          log(
+            "Snapshot trains:",
+            snapshot?.Trains?.length ?? 0
+          );
+
+          await ctx.runMutation(
+            internal.processSnapshot.processSnapshot,
+            {
+              stationId: "KH",
+              snapshot,
+            }
+          );
+
+          log("Snapshot processed successfully");
+
+          ws.close();
+          resolve();
+        } catch (err) {
+          console.error("[snapshot] Failed to process snapshot", err);
+          reject(err);
+        }
+      });
+
+      ws.on("error", (err) => {
+        console.error("[snapshot] Websocket error", err);
+        reject(err);
+      });
+
+      ws.on("close", () => {
+        log("Websocket closed");
+      });
+
+      setTimeout(() => {
+        if (!handled) {
+          log("Timeout reached, closing websocket");
+          ws.close();
+          resolve();
+        }
+      }, 8000);
+    });
+  },
 });

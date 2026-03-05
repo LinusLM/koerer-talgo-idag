@@ -101,16 +101,7 @@ export default function PushNotificationManager() {
     await unsubscribeUser({ userId });
   }
 
-  async function sendTestNotification() {
-    const userId = getUserId();
-    if (subscription && userId) {
-      await sendNotification({
-        message,
-        title: "Talgo Alert",
-      });
-      setMessage("");
-    }
-  }
+  
 
   if (!isSupported) {
     return <p>Push notifications are not supported in this browser.</p>;

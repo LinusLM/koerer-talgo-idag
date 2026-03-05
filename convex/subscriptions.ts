@@ -95,3 +95,123 @@ export const setUserTargets = mutation({
     return { success: true };
   },
 });
+
+// Get stations that have active subscriptions
+export const getStationsWithSubscriptions = query({
+  handler: async (ctx) => {
+    const allSubscriptions = await ctx.db.query("subscriptions").collect();
+
+    // Extract unique station IDs that have active subscriptions
+    const stationsSet = new Set<string>();
+
+    for (const sub of allSubscriptions) {
+      if (sub.stations && sub.stations.length > 0) {
+        sub.stations.forEach(stationId => stationsSet.add(stationId));
+      }
+    }
+
+    return Array.from(stationsSet);
+  },
+});
+
+// Get all train states for a station (for optimized bulk processing)
+export const getAllTrainStatesForStation = query({
+  args: {
+    stationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("trainStates")
+      .withIndex("by_station_train", (q) =>
+        q.eq("stationId", args.stationId)
+      )
+      .collect();
+  },
+});
+
+// Get train state by station and train ID
+export const getTrainState = query({
+  args: {
+    stationId: v.string(),
+    trainId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("trainStates")
+      .withIndex("by_station_train", (q) =>
+        q.eq("stationId", args.stationId).eq("trainId", args.trainId)
+      )
+      .unique();
+  },
+});
+
+// Update existing train state
+export const updateTrainState = mutation({
+  args: {
+    id: v.id("trainStates"),
+    wasTalgo: v.boolean(),
+    wasCancelled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      wasTalgo: args.wasTalgo,
+      wasCancelled: args.wasCancelled,
+    });
+    return { success: true };
+  },
+});
+
+// Upsert train state (insert or update if exists)
+export const upsertTrainState = mutation({
+  args: {
+    stationId: v.string(),
+    trainId: v.string(),
+    wasTalgo: v.boolean(),
+    wasCancelled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("trainStates")
+      .withIndex("by_station_train", (q) =>
+        q.eq("stationId", args.stationId).eq("trainId", args.trainId)
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        wasTalgo: args.wasTalgo,
+        wasCancelled: args.wasCancelled,
+      });
+    } else {
+      try {
+        await ctx.db.insert("trainStates", {
+          stationId: args.stationId,
+          trainId: args.trainId,
+          wasTalgo: args.wasTalgo,
+          wasCancelled: args.wasCancelled,
+        });
+      } catch (error) {
+        // Handle race condition - another thread may have inserted the same record
+        // Re-query and update the existing record
+        const retryExisting = await ctx.db
+          .query("trainStates")
+          .withIndex("by_station_train", (q) =>
+            q.eq("stationId", args.stationId).eq("trainId", args.trainId)
+          )
+          .first();
+
+        if (retryExisting) {
+          await ctx.db.patch(retryExisting._id, {
+            wasTalgo: args.wasTalgo,
+            wasCancelled: args.wasCancelled,
+          });
+        } else {
+          // If still no record found, re-throw the original error
+          throw error;
+        }
+      }
+    }
+
+    return { success: true };
+  },
+});

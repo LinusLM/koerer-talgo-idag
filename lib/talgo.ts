@@ -13,7 +13,11 @@ function countUnits(arr: string[]) {
 }
 
 export function isTalgo(train: any) {
-    const units = train.routes?.map((r: any) => r.unitType) ?? [];
+    // Accept different snapshot shapes: `Routes` or `routes`, and unit fields
+    const routeArray = train.Routes ?? train.routes ?? [];
+    const units = (routeArray ?? [])
+        .map((r: any) => r?.UnitType ?? r?.unitType ?? "")
+        .filter((u: string) => !!u);
 
     if (units.length === 0) return false;
 
@@ -21,6 +25,6 @@ export function isTalgo(train: any) {
     const actualCounts = countUnits(units);
 
     return Object.entries(requiredCounts).every(
-        ([unit, count]) => actualCounts[unit] >= count
+        ([unit, count]) => (actualCounts[unit] || 0) >= count
     );
 }

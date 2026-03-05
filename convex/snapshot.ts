@@ -3,78 +3,95 @@
 import { internalAction } from "./_generated/server";
 import WebSocket from "ws";
 import { internal } from "./_generated/api";
-
-const DEBUG = process.env.DEBUG_MITTOG === "true";
-const log = (...args: any[]) => {
-  if (DEBUG) console.log("[snapshot]", ...args);
-};
+import { api } from "./_generated/api";
 
 export const fetchAndProcessSnapshot = internalAction({
   handler: async (ctx) => {
-    log("Starting websocket connection");
+    console.log("Starting multi-station snapshot fetch");
 
-    return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(
-        "wss://api.mittog.dk/api/ws/departure/KH/"
-      );
+    // Get stations that have active subscriptions
+    const activeStations = await ctx.runQuery(api.subscriptions.getStationsWithSubscriptions);
 
-      let handled = false;
+    if (activeStations.length === 0) {
+      console.log("No stations have active subscriptions, skipping snapshot fetch");
+      return;
+    }
 
-      ws.on("open", () => {
-        log("Websocket connected");
-      });
+    console.log("Processing stations:", activeStations);
 
-      ws.on("message", async (data) => {
-        if (handled) {
-          log("Ignoring extra snapshot");
-          return;
-        }
+    // Process each station with subscriptions
+    const promises = activeStations.map(stationId =>
+      fetchStationSnapshot(ctx, stationId)
+    );
 
-        handled = true;
-        log("Received snapshot");
-
-        try {
-          const snapshot = JSON.parse(data.toString());
-
-          log(
-            "Snapshot trains:",
-            snapshot?.Trains?.length ?? 0
-          );
-
-          await ctx.runMutation(
-            internal.processSnapshot.processSnapshot,
-            {
-              stationId: "KH",
-              snapshot,
-            }
-          );
-
-          log("Snapshot processed successfully");
-
-          ws.close();
-          resolve();
-        } catch (err) {
-          console.error("[snapshot] Failed to process snapshot", err);
-          reject(err);
-        }
-      });
-
-      ws.on("error", (err) => {
-        console.error("[snapshot] Websocket error", err);
-        reject(err);
-      });
-
-      ws.on("close", () => {
-        log("Websocket closed");
-      });
-
-      setTimeout(() => {
-        if (!handled) {
-          log("Timeout reached, closing websocket");
-          ws.close();
-          resolve();
-        }
-      }, 8000);
-    });
+    await Promise.all(promises);
+    console.log("All station snapshots processed");
   },
 });
+
+async function fetchStationSnapshot(ctx: any, stationId: string) {
+  console.log(`Starting websocket connection for station ${stationId}`);
+
+  return new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(
+      `wss://api.mittog.dk/api/ws/departure/${stationId}/`
+    );
+
+    let handled = false;
+
+    ws.on("open", () => {
+      console.log(`Websocket connected for ${stationId}`);
+    });
+
+    ws.on("message", async (data) => {
+      if (handled) {
+        console.log(`Ignoring extra snapshot for ${stationId}`);
+        return;
+      }
+
+      handled = true;
+      console.log(`Received snapshot for ${stationId}`);
+
+      try {
+        const snapshot = JSON.parse(data.toString());
+
+        // If the feed wraps the payload in `data`, pass the inner object to the processor.
+        const payloadToProcess = snapshot?.data ?? snapshot;
+
+        await ctx.runAction(
+          internal.processSnapshot.processSnapshot,
+          {
+            stationId: stationId,
+            snapshot: payloadToProcess,
+          }
+        );
+
+        console.log(`Snapshot processed successfully for ${stationId}`);
+
+        ws.close();
+        resolve();
+      } catch (err) {
+        console.error(`[snapshot] Failed to process snapshot for ${stationId}`, err);
+        ws.close();
+        reject(err);
+      }
+    });
+
+    ws.on("error", (err) => {
+      console.error(`[snapshot] Websocket error for ${stationId}`, err);
+      reject(err);
+    });
+
+    ws.on("close", () => {
+      console.log(`Websocket closed for ${stationId}`);
+    });
+
+    setTimeout(() => {
+      if (!handled) {
+        console.log(`Timeout reached for ${stationId}, closing websocket`);
+        ws.close();
+        resolve();
+      }
+    }, 8000);
+  });
+}

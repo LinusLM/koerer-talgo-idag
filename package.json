@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "dev:pwa": "next dev & ngrok http 3000",
-    "dev:https": "next dev --experimental-https --webpack",
+    "dev:https": "next dev --experimental-https ",
     "test": "vitest"
   },
   "dependencies": {

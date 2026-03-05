@@ -1,14 +1,11 @@
-import { internalMutation } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { isTalgo } from "../lib/talgo";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 
 const DEBUG = process.env.DEBUG_MITTOG === "true";
-const log = (...args: any[]) => {
-  if (DEBUG) console.log("[processSnapshot]", ...args);
-};
 
-export const processSnapshot = internalMutation({
+export const processSnapshot = internalAction({
   args: {
     stationId: v.string(),
     snapshot: v.any(),
@@ -16,82 +13,96 @@ export const processSnapshot = internalMutation({
   handler: async (ctx, args) => {
     const { stationId, snapshot } = args;
 
-    log("Processing snapshot for station:", stationId);
+    if (DEBUG) console.log("Processing snapshot for", stationId);
+
+    // 🚀 ONE QUERY - load all existing train states for this station
+    const existingStates = await ctx.runQuery(api.subscriptions.getAllTrainStatesForStation, {
+      stationId: stationId
+    });
+
+    // convert to map for fast lookup
+    const stateMap = new Map(
+      existingStates.map((s) => [s.trainId, s])
+    );
 
     for (const train of snapshot.Trains ?? []) {
-      const talgoNow = isTalgo(train);
-      const cancelledNow = train.IsCancelledDeparture === true;
+      // Normalize common id/cancellation fields across different snapshot shapes
+      const trainId = train.PublicTrainId;
+      const product = train.Product ?? "";
 
-      log(
-        "Train",
-        train.TrainId,
-        "| talgo:",
-        talgoNow,
-        "| cancelled:",
-        cancelledNow
-      );
-
-      const existing = await ctx.db
-        .query("trainStates")
-        .withIndex("by_station_train", (q) =>
-          q.eq("stationId", stationId).eq("trainId", train.TrainId)
-        )
-        .unique();
-
-      if (existing) {
-        log("Existing state:", existing);
+      // Validate trainId is present before processing
+      if (!trainId || typeof trainId !== 'string' || trainId.trim() === '') {
+        if (DEBUG) console.log("Skipping train with missing/invalid PublicTrainId:", train);
+        continue;
       }
+
+      const talgoNow = isTalgo(train);
+      const cancelledNow =
+        train.IsCancelledDeparture === true ||
+        train.isCancelled === true ||
+        train.cancelled === true ||
+        train.IsCancelled === true;
+
+      const existing = stateMap.get(trainId);
+
+      if (DEBUG)
+        console.log(
+          "Train",
+          trainId,
+          "Talgo:",
+          talgoNow,
+          "Cancelled:",
+          cancelledNow
+        );
 
       // 🚄 TALGO SWITCHED IN
       if (!existing?.wasTalgo && talgoNow) {
-        log("Talgo switched IN for train", train.TrainId);
+        if (DEBUG) console.log("Talgo switched IN:", trainId);
 
         await notifyStationSubscribers(ctx, stationId, {
           title: "Talgo train detected",
-          message: `Train ${train.TrainId} is now a Talgo`,
+          message: `Train ${product}${trainId} is now a Talgo`,
         });
       }
 
       // 🚄 TALGO SWITCHED OUT
       if (existing?.wasTalgo && !talgoNow) {
-        log("Talgo switched OUT for train", train.TrainId);
+        if (DEBUG) console.log("Talgo switched OUT:", trainId);
 
         await notifyStationSubscribers(ctx, stationId, {
           title: "Talgo removed",
-          message: `Train ${train.TrainId} is no longer Talgo`,
+          message: `Train ${product}${trainId} is no longer Talgo`,
         });
       }
 
-      // 🚫 CANCELLATION
-      if (!existing?.wasCancelled && cancelledNow) {
-        log("Train cancelled", train.TrainId);
+      // 🚫 CANCELLATION (only for TALGO trains)
+      if (!existing?.wasCancelled && cancelledNow && (existing?.wasTalgo || talgoNow)) {
+        if (DEBUG) console.log("Talgo train cancelled:", trainId);
 
         await notifyStationSubscribers(ctx, stationId, {
-          title: "Train cancelled",
-          message: `Train ${train.TrainId} was cancelled`,
+          title: "Talgo train cancelled",
+          message: `Talgo train ${product}${trainId} was cancelled`,
         });
       }
 
+      // DB updates - use mutations
       if (existing) {
-        log("Updating train state");
-
-        await ctx.db.patch(existing._id, {
+        await ctx.runMutation(api.subscriptions.updateTrainState, {
+          id: existing._id,
           wasTalgo: talgoNow,
           wasCancelled: cancelledNow,
         });
       } else {
-        log("Creating train state");
-
-        await ctx.db.insert("trainStates", {
+        await ctx.runMutation(api.subscriptions.upsertTrainState, {
           stationId,
-          trainId: train.TrainId,
+          trainId,
           wasTalgo: talgoNow,
           wasCancelled: cancelledNow,
         });
       }
     }
 
-    log("Finished processing snapshot");
+    if (DEBUG) console.log("Snapshot processing finished");
   },
 });
 
@@ -100,10 +111,13 @@ async function notifyStationSubscribers(
   stationId: string,
   payload: any
 ) {
-  log("Sending notification to station subscribers", stationId);
+  if (DEBUG)
+    console.log("Sending notification for station", stationId);
 
   await ctx.runAction(api.push.sendNotification, {
-    ...payload,
     stationId,
+    title: payload.title,
+    message: payload.message,
   });
 }
+

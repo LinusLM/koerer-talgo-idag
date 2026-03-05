@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 const crons = cronJobs();
 
 crons.interval(
-    "Fetch and process station data", { minutes: 5 }, internal.snapshot.fetchAndProcessSnapshot
+    "Fetch and process station data", { minutes: 25 }, internal.snapshot.fetchAndProcessSnapshot
 )
 
 

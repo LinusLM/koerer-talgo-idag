@@ -2,6 +2,7 @@ import { internalAction } from "./_generated/server";
 import { isTalgo } from "../lib/talgo";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { removeAmpersandFromCode } from "../lib/stations";
 
 const DEBUG = process.env.DEBUG_MITTOG === "true";
 
@@ -20,15 +21,17 @@ export const processSnapshot = internalAction({
       stationId: stationId
     });
 
-    // convert to map for fast lookup
+    // Convert to map for fast lookup
     const stateMap = new Map(
       existingStates.map((s) => [s.trainId, s])
     );
 
+    const notifications: Array<{ title: string; message: string }> = [];
+    const stateUpdates: Array<{ stationId: string; trainId: string; wasTalgo: boolean; wasCancelled: boolean }> = [];
+
     for (const train of snapshot.Trains ?? []) {
       // Normalize common id/cancellation fields across different snapshot shapes
       const trainId = train.PublicTrainId;
-      const product = train.Product ?? "";
 
       // Validate trainId is present before processing
       if (!trainId || typeof trainId !== 'string' || trainId.trim() === '') {
@@ -45,55 +48,46 @@ export const processSnapshot = internalAction({
 
       const existing = stateMap.get(trainId);
 
-      if (DEBUG)
-        console.log(
-          "Train",
-          trainId,
-          "Talgo:",
-          talgoNow,
-          "Cancelled:",
-          cancelledNow
-        );
+      if (DEBUG) {
+        console.log("Train", trainId, "Talgo:", talgoNow, "Cancelled:", cancelledNow);
+      }
+
+      // Check for state changes that require notifications
+      let stateChanged = false;
 
       // 🚄 TALGO SWITCHED IN
       if (!existing?.wasTalgo && talgoNow) {
         if (DEBUG) console.log("Talgo switched IN:", trainId);
-
-        await notifyStationSubscribers(ctx, stationId, {
-          title: "Talgo train detected",
-          message: `Train ${product}${trainId} is now a Talgo`,
+        notifications.push({
+          title: "Talgo train detected at " + removeAmpersandFromCode(stationId),
+          message: formatNotification(train)
         });
+        stateChanged = true;
       }
 
-      // 🚄 TALGO SWITCHED OUT
+      // 🚄 TALGO SWITCHED OUT  
       if (existing?.wasTalgo && !talgoNow) {
         if (DEBUG) console.log("Talgo switched OUT:", trainId);
-
-        await notifyStationSubscribers(ctx, stationId, {
-          title: "Talgo removed",
-          message: `Train ${product}${trainId} is no longer Talgo`,
+        notifications.push({
+          title: `Talgo removed at ${removeAmpersandFromCode(stationId)}`,
+          message: formatNotification(train)
         });
+        stateChanged = true;
       }
 
       // 🚫 CANCELLATION (only for TALGO trains)
       if (!existing?.wasCancelled && cancelledNow && (existing?.wasTalgo || talgoNow)) {
         if (DEBUG) console.log("Talgo train cancelled:", trainId);
-
-        await notifyStationSubscribers(ctx, stationId, {
-          title: "Talgo train cancelled",
-          message: `Talgo train ${product}${trainId} was cancelled`,
+        notifications.push({
+          title: `Talgo train cancelled at ${removeAmpersandFromCode(stationId)}`,
+          message: formatNotification(train)
         });
+        stateChanged = true;
       }
 
-      // DB updates - use mutations
-      if (existing) {
-        await ctx.runMutation(api.subscriptions.updateTrainState, {
-          id: existing._id,
-          wasTalgo: talgoNow,
-          wasCancelled: cancelledNow,
-        });
-      } else {
-        await ctx.runMutation(api.subscriptions.upsertTrainState, {
+      // Always track the current state for batch update (only if state changed or new train)
+      if (!existing || existing.wasTalgo !== talgoNow || existing.wasCancelled !== cancelledNow) {
+        stateUpdates.push({
           stationId,
           trainId,
           wasTalgo: talgoNow,
@@ -102,7 +96,19 @@ export const processSnapshot = internalAction({
       }
     }
 
-    if (DEBUG) console.log("Snapshot processing finished");
+    // 🚀 BATCH DB UPDATE - One call instead of many
+    if (stateUpdates.length > 0) {
+      await ctx.runMutation(api.subscriptions.batchUpdateTrainStates, {
+        updates: stateUpdates
+      });
+    }
+
+    // 🔔 BATCH NOTIFICATIONS - Send all at once
+    for (const notification of notifications) {
+      await notifyStationSubscribers(ctx, stationId, notification);
+    }
+
+    if (DEBUG) console.log(`Snapshot processing finished - ${stateUpdates.length} state updates, ${notifications.length} notifications`);
   },
 });
 
@@ -121,3 +127,37 @@ async function notifyStationSubscribers(
   });
 }
 
+function formatNotification(train: Train): string {
+  const product = train.Product ?? "";
+  const trainId = train.PublicTrainId ?? "";
+
+  const departureTime = train.ScheduleTimeDeparture ?? train.ScheduleTime ?? "";
+
+  const destination = removeAmpersandFromCode(train.Routes?.[0]?.DestinationStationId ?? "");
+  let time = "unknown time";
+  if (departureTime) {
+    const date = new Date(departureTime);
+    if (!isNaN(date.getTime())) {
+      time = date.toLocaleTimeString("da-DK", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).replace(".", ":");
+    }
+  }
+  const trainNumber = `${product}${trainId}`;
+
+  return `${trainNumber} to ${destination} at ${time}`;
+}
+
+interface Route {
+  DestinationStationId: string;
+  OriginStationId: string;
+}
+
+interface Train {
+  Product: string;
+  PublicTrainId: string;
+  Routes?: Route[];
+  ScheduleTimeDeparture?: string;
+  ScheduleTime?: string;
+}

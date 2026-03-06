@@ -1,5 +1,6 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalAction, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { api, internal } from "./_generated/api";
 
 // Subscribe user
 export const subscribeUser = mutation({
@@ -212,6 +213,93 @@ export const upsertTrainState = mutation({
       }
     }
 
+    return { success: true };
+  },
+});
+
+// Batch update train states for better performance
+export const batchUpdateTrainStates = mutation({
+  args: {
+    updates: v.array(v.object({
+      stationId: v.string(),
+      trainId: v.string(),
+      wasTalgo: v.boolean(),
+      wasCancelled: v.boolean(),
+    }))
+  },
+  handler: async (ctx, args) => {
+    for (const update of args.updates) {
+      const existing = await ctx.db
+        .query("trainStates")
+        .withIndex("by_station_train", (q) =>
+          q.eq("stationId", update.stationId).eq("trainId", update.trainId)
+        )
+        .first();
+
+      if (existing) {
+        // Only update if state actually changed
+        if (existing.wasTalgo !== update.wasTalgo || existing.wasCancelled !== update.wasCancelled) {
+          await ctx.db.patch(existing._id, {
+            wasTalgo: update.wasTalgo,
+            wasCancelled: update.wasCancelled,
+          });
+        }
+      } else {
+        await ctx.db.insert("trainStates", {
+          stationId: update.stationId,
+          trainId: update.trainId,
+          wasTalgo: update.wasTalgo,
+          wasCancelled: update.wasCancelled,
+        });
+      }
+    }
+
+    return { success: true };
+  },
+});
+
+// Cleanup old train states (older than 5 hours) - Internal Action for cron job
+export const cleanupOldTrainStates = internalAction({
+  handler: async (ctx) => {
+    const fiveHoursAgo = Date.now() - (5 * 60 * 60 * 1000); // 5 hours in milliseconds
+
+    const oldStates = await ctx.runQuery(internal.subscriptions.getOldTrainStates, {
+      cutoffTime: fiveHoursAgo
+    });
+
+    let deletedCount = 0;
+    for (const state of oldStates) {
+      await ctx.runMutation(internal.subscriptions.deleteTrainState, {
+        id: state._id
+      });
+      deletedCount++;
+    }
+
+    console.log(`Cleaned up ${deletedCount} old train states`);
+    return { deletedCount };
+  },
+});
+
+// Helper query to get old train states
+export const getOldTrainStates = internalQuery({
+  args: {
+    cutoffTime: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("trainStates")
+      .filter((q) => q.lt(q.field("_creationTime"), args.cutoffTime))
+      .collect();
+  },
+});
+
+// Helper mutation to delete a train state
+export const deleteTrainState = internalMutation({
+  args: {
+    id: v.id("trainStates"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
     return { success: true };
   },
 });

@@ -72,12 +72,10 @@ export default function Page() {
   useEffect(() => {
     if (userSub) {
       const serverStations = userSub.stations || [];
-      const serverTrains = userSub.trains || [];
       setSelectedStations(Array.isArray(serverStations) ? serverStations : []);
       setStations(
         Array.isArray(serverStations) ? serverStations.join(", ") : "",
       );
-      setTrains(Array.isArray(serverTrains) ? serverTrains.join(", ") : "");
     }
   }, [userSub]);
 

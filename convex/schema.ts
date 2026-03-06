@@ -6,7 +6,6 @@ export default defineSchema({
     userId: v.string(),
     subscription: v.any(),
     stations: v.array(v.string()), // multiple stations per user
-    trains: v.optional(v.array(v.string())),   // optional, if you want train-specific subscriptions
   }).index("by_userId", ["userId"]), // keep userId index for quick lookups
 
   trainStates: defineTable({

@@ -23,7 +23,6 @@ export const subscribeUser = mutation({
         userId: args.userId,
         subscription: args.subscription,
         stations: [],
-        trains: [],
       });
     }
 
@@ -82,14 +81,12 @@ export const setUserTargets = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         stations: args.stations,
-        trains: args.trains,
       });
     } else {
       await ctx.db.insert("subscriptions", {
         userId: args.userId,
         subscription: null,
         stations: args.stations,
-        trains: args.trains,
       });
     }
 

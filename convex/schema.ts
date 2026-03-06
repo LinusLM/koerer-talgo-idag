@@ -11,7 +11,9 @@ export default defineSchema({
   trainStates: defineTable({
     stationId: v.string(),
     trainId: v.string(),
+    departureTime: v.optional(v.number()),
     wasTalgo: v.boolean(),
     wasCancelled: v.boolean(),
+
   }).index("by_station_train", ["stationId", "trainId"]),
 });

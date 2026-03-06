@@ -1,45 +1,44 @@
-// tests/sendNotification.test.ts
-import { describe, it } from "vitest";
-import { ConvexClient } from "convex/browser";
+/// <reference types="vite/client" />
+
+import { test, expect, vi } from "vitest";
+import { convexTest } from "convex-test";
+import schema from "../convex/schema";
 import { api } from "../convex/_generated/api";
-import { sendNotification } from "../convex/push";
-import { config } from "dotenv";
 
-config({ path: ".env.local" }); // explicitly load .env.local
-const client = new ConvexClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+// Mock web-push before loading functions so the mocked module is used.
+vi.mock("web-push", () => {
+    const fn = vi.fn(async () => { });
+    return {
+        default: { sendNotification: fn, setVapidDetails: vi.fn() },
+        sendNotification: fn,
+        setVapidDetails: vi.fn(),
+    };
+});
 
-describe("Send test notifications to OD subscribers", () => {
-    it("should notify all OD subscribers", async () => {
-        // Fetch all subscriptions from the dev Convex instance
-        const allSubs = await client.query(api.subscriptions.getAll, {});
+// Import all Convex function modules (exclude any `*.test.ts` files)
+const modules = import.meta.glob("../convex/**/!(*.test).ts");
 
-        // Filter to OD station
-        const odSubs = allSubs.filter((sub: any) => sub.stationId === "OD");
+test("sendNotification action sends notifications to station subscribers", async () => {
+    const t = convexTest(schema, modules);
 
-        console.log(`Found ${odSubs.length} OD subscribers`);
-
-        // Fake context for calling sendNotification
-        const fakeCtx = {
-            runQuery: async () => odSubs,
-        };
-
-        // Helper to call the action
-        async function callSendNotification(args: {
-            title: string;
-            message: string;
-            stationId: string;
-        }) {
-            // @ts-ignore: bypass TS because sendNotification expects internal context
-            return sendNotification(args, fakeCtx);
-        }
-
-        // Actually call it
-        await callSendNotification({
-            title: "🚄 Test Talgo Notification",
-            message: "This is a test notification for all OD subscribers!",
-            stationId: "OD",
+    // Seed a subscription that listens to station 'OD'
+    await t.run(async (ctx) => {
+        await ctx.db.insert("subscriptions", {
+            userId: "user1",
+            subscription: { endpoint: "https://example.com/push" },
+            stations: ["OD"],
         });
-
-        console.log("Notifications sent! Check your devices.");
     });
+
+    // Call the action
+    await t.action(api.push.sendNotification, {
+        title: "🚄 Test Talgo Notification",
+        message: "This is a test notification for all OD subscribers!",
+        stationId: "OD",
+    });
+
+    // Assert web-push sendNotification was called
+    const webpush = await import("web-push");
+    const sendFn = (webpush as any).sendNotification ?? (webpush as any).default?.sendNotification;
+    expect(sendFn).toHaveBeenCalled();
 });

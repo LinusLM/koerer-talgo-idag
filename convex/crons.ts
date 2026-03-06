@@ -8,7 +8,7 @@ crons.interval(
 )
 
 crons.interval(
-    "Cleanup old train states", { hours: 1 }, internal.subscriptions.cleanupOldTrainStates
+    "Cleanup old train states", { hours: 1 }, internal.cleanupTrainStates.cleanupTrainStates
 )
 
 

@@ -12,6 +12,8 @@ const trackedTrainTypes = new Set([
   "EX"
 ])
 
+
+
 export const processSnapshot = internalAction({
   args: {
     stationId: v.string(),
@@ -23,7 +25,7 @@ export const processSnapshot = internalAction({
     if (DEBUG) console.log("Processing snapshot for", stationId);
 
     // 🚀 ONE QUERY - load all existing train states for this station
-    const existingStates = await ctx.runQuery(api.subscriptions.getAllTrainStatesForStation, {
+    const existingStates = await ctx.runQuery(api.trainStates.getAllTrainStatesForStation, {
       stationId: stationId
     });
 
@@ -33,12 +35,37 @@ export const processSnapshot = internalAction({
     );
 
     const notifications: Array<{ title: string; message: string }> = [];
-    const stateUpdates: Array<{ stationId: string; trainId: string; wasTalgo: boolean; wasCancelled: boolean }> = [];
+    const stateUpdates: Array<{ stationId: string; trainId: string; wasTalgo: boolean; wasCancelled: boolean; departureTime?: number }> = [];
 
     for (const train of snapshot.Trains ?? []) {
+      const rawTime = train.ScheduleTimeDeparture ?? train.ScheduleTime ?? "";
+      let departureTimeInMs = NaN;
+      if (typeof rawTime === "string" && rawTime.trim() !== "") {
+        try {
+          departureTimeInMs = parseMittogTime(rawTime);
+        } catch (err) {
+          if (DEBUG) console.log("Failed to parse departure time:", rawTime, err);
+          departureTimeInMs = NaN;
+        }
+      }
+
+      const currentTime = Date.now();
+      const maxFutureTime = 8 * 60 * 60 * 1000; // 8 hours
+
+      // If we couldn't parse a valid departure time, skip this train.
+      if (!Number.isFinite(departureTimeInMs)) {
+        if (DEBUG) console.log("Skipping train due to invalid/missing departure time:", train.PublicTrainId);
+        continue;
+      }
+
       // Normalize common id/cancellation fields across different snapshot shapes
       const trainId = train.PublicTrainId;
       const product = (train.Product ?? "").toString().trim().toUpperCase();
+
+      if (departureTimeInMs - currentTime > maxFutureTime) {
+        if (DEBUG) console.log("Skipping train: ", trainId, ". with future departure time:");
+        continue;
+      }
 
       if (!trackedTrainTypes.has(product)) {
         if (DEBUG) console.log("Skipping untracked train type:", product, trainId);
@@ -57,6 +84,9 @@ export const processSnapshot = internalAction({
         train.isCancelled === true ||
         train.cancelled === true ||
         train.IsCancelled === true;
+
+      // Use canonical parsed departure time from above
+      const departureTimestamp = departureTimeInMs;
 
       const existing = stateMap.get(trainId);
 
@@ -98,19 +128,20 @@ export const processSnapshot = internalAction({
       }
 
       // Always track the current state for batch update (only if state changed or new train)
-      if (!existing || existing.wasTalgo !== talgoNow || existing.wasCancelled !== cancelledNow) {
+      if (!existing || existing.wasTalgo !== talgoNow || existing.wasCancelled !== cancelledNow || (Number.isFinite(departureTimestamp) && existing?.departureTime !== departureTimestamp)) {
         stateUpdates.push({
           stationId,
           trainId,
           wasTalgo: talgoNow,
           wasCancelled: cancelledNow,
+          departureTime: Number.isFinite(departureTimestamp) ? departureTimestamp : undefined,
         });
       }
     }
 
     // 🚀 BATCH DB UPDATE - One call instead of many
     if (stateUpdates.length > 0) {
-      await ctx.runMutation(api.subscriptions.batchUpdateTrainStates, {
+      await ctx.runMutation(api.trainStates.batchUpdateTrainStates, {
         updates: stateUpdates
       });
     }
@@ -123,6 +154,36 @@ export const processSnapshot = internalAction({
     if (DEBUG) console.log(`Snapshot processing finished - ${stateUpdates.length} state updates, ${notifications.length} notifications`);
   },
 });
+
+function parseMittogTime(time: string) {
+  if (typeof time !== "string" || time.trim() === "") {
+    return NaN;
+  }
+
+  // Expected format: DD-MM-YYYY HH:mm (allow 1-2 digit day/month/hour)
+  const re = /^(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})$/;
+  const m = re.exec(time.trim());
+  if (!m) {
+    return NaN;
+  }
+
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+
+  // Validate ranges
+  if (!(month >= 1 && month <= 12)) return NaN;
+  if (!(day >= 1 && day <= 31)) return NaN;
+  if (!(hour >= 0 && hour <= 23)) return NaN;
+  if (!(minute >= 0 && minute <= 59)) return NaN;
+
+  const date = new Date(year, month - 1, day, hour, minute);
+  const t = date.getTime();
+  if (isNaN(t)) return NaN;
+  return t;
+}
 
 async function notifyStationSubscribers(
   ctx: any,

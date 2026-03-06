@@ -8,11 +8,13 @@
  * @module
  */
 
+import type * as cleanupTrainStates from "../cleanupTrainStates.js";
 import type * as crons from "../crons.js";
 import type * as processSnapshot from "../processSnapshot.js";
 import type * as push from "../push.js";
 import type * as snapshot from "../snapshot.js";
 import type * as subscriptions from "../subscriptions.js";
+import type * as trainStates from "../trainStates.js";
 
 import type {
   ApiFromModules,
@@ -21,11 +23,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  cleanupTrainStates: typeof cleanupTrainStates;
   crons: typeof crons;
   processSnapshot: typeof processSnapshot;
   push: typeof push;
   snapshot: typeof snapshot;
   subscriptions: typeof subscriptions;
+  trainStates: typeof trainStates;
 }>;
 
 /**

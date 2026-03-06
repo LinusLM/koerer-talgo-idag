@@ -6,6 +6,12 @@ import { removeAmpersandFromCode } from "../lib/stations";
 
 const DEBUG = process.env.DEBUG_MITTOG === "true";
 
+const trackedTrainTypes = new Set([
+  "EC",
+  "ECE",
+  "EX"
+])
+
 export const processSnapshot = internalAction({
   args: {
     stationId: v.string(),
@@ -32,6 +38,12 @@ export const processSnapshot = internalAction({
     for (const train of snapshot.Trains ?? []) {
       // Normalize common id/cancellation fields across different snapshot shapes
       const trainId = train.PublicTrainId;
+      const product = (train.Product ?? "").toString().trim().toUpperCase();
+
+      if (!trackedTrainTypes.has(product)) {
+        if (DEBUG) console.log("Skipping untracked train type:", product, trainId);
+        continue;
+      }
 
       // Validate trainId is present before processing
       if (!trainId || typeof trainId !== 'string' || trainId.trim() === '') {

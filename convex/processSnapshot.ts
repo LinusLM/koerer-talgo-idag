@@ -59,7 +59,7 @@ export const processSnapshot = internalAction({
       if (!existing?.wasTalgo && talgoNow) {
         if (DEBUG) console.log("Talgo switched IN:", trainId);
         notifications.push({
-          title: "Talgo train detected at " + removeAmpersandFromCode(stationId),
+          title: "Talgo fundet ved " + removeAmpersandFromCode(stationId),
           message: formatNotification(train)
         });
         stateChanged = true;
@@ -69,7 +69,7 @@ export const processSnapshot = internalAction({
       if (existing?.wasTalgo && !talgoNow) {
         if (DEBUG) console.log("Talgo switched OUT:", trainId);
         notifications.push({
-          title: `Talgo removed at ${removeAmpersandFromCode(stationId)}`,
+          title: `Talgo fjernet ved ${removeAmpersandFromCode(stationId)}`,
           message: formatNotification(train)
         });
         stateChanged = true;
@@ -79,7 +79,7 @@ export const processSnapshot = internalAction({
       if (!existing?.wasCancelled && cancelledNow && (existing?.wasTalgo || talgoNow)) {
         if (DEBUG) console.log("Talgo train cancelled:", trainId);
         notifications.push({
-          title: `Talgo train cancelled at ${removeAmpersandFromCode(stationId)}`,
+          title: `Talgo aflyst ved ${removeAmpersandFromCode(stationId)}`,
           message: formatNotification(train)
         });
         stateChanged = true;
@@ -146,7 +146,7 @@ function formatNotification(train: Train): string {
   }
   const trainNumber = `${product}${trainId}`;
 
-  return `${trainNumber} to ${destination} at ${time}`;
+  return `${trainNumber} til ${destination} kl. ${time}`;
 }
 
 interface Route {

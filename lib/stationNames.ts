@@ -3,5 +3,5 @@ export const STATIONS = [
   { label: "København", value: "KH" },
   { label: "Padborg", value: "PA" },
   { label: "Ringsted", value: "RG" },
-
+  { label: "Kolding", value: "KD" },
 ];

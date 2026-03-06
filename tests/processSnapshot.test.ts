@@ -25,7 +25,10 @@ test("sendNotification action sends notifications to station subscribers", async
     await t.run(async (ctx) => {
         await ctx.db.insert("subscriptions", {
             userId: "user1",
-            subscription: { endpoint: "https://example.com/push" },
+            subscription: {
+                endpoint: "https://example.com/push",
+                keys: { auth: "auth", p256dh: "p256dh" },
+            },
             stations: ["OD"],
         });
     });

@@ -85,7 +85,7 @@ export const setUserTargets = mutation({
     } else {
       await ctx.db.insert("subscriptions", {
         userId: args.userId,
-        subscription: null,
+        subscription: null as any,
         stations: args.stations,
       });
     }

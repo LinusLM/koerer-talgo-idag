@@ -1,3 +1,5 @@
+import { DateTime } from 'luxon';
+
 export function parseMittogTime(time: string) {
     if (typeof time !== "string" || time.trim() === "") {
         return NaN;
@@ -22,14 +24,15 @@ export function parseMittogTime(time: string) {
         if (!(minute >= 0 && minute <= 59)) return NaN;
         if (!(second >= 0 && second <= 59)) return NaN;
 
-        const date = new Date(year, month - 1, day, hour, minute, second);
+        // Interpret the provided components in Europe/Copenhagen timezone
+        const dt = DateTime.fromObject(
+            { year, month, day, hour, minute, second },
+            { zone: 'Europe/Copenhagen' }
+        );
+        if (!dt.isValid) return NaN;
         // Verify the date didn't roll over (e.g., Feb 30 -> March 2)
-        if (date.getDate() !== day || date.getMonth() !== month - 1) {
-            return NaN;
-        }
-        const t = date.getTime();
-        if (isNaN(t)) return NaN;
-        return t;
+        if (dt.day !== day || dt.month !== month) return NaN;
+        return dt.toMillis();
     }
 
     // 2) Time-only form: HH:mm(:ss)? — interpret relative to now (today or next day)
@@ -44,18 +47,22 @@ export function parseMittogTime(time: string) {
         if (!(minute >= 0 && minute <= 59)) return NaN;
         if (!(second >= 0 && second <= 59)) return NaN;
 
-        const now = new Date();
-        let date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, second);
+        // Use Europe/Copenhagen 'now' for relative calculations
+        const now = DateTime.now().setZone('Europe/Copenhagen');
+        let dt = DateTime.fromObject(
+            { year: now.year, month: now.month, day: now.day, hour, minute, second },
+            { zone: 'Europe/Copenhagen' }
+        );
+        if (!dt.isValid) return NaN;
 
         // If the time appears to be significantly in the past (more than 12 hours),
-        // assume the intended departure is the next day (small stations often show next-day departures).
+        // assume the intended departure is the next day.
         const twelveHours = 12 * 60 * 60 * 1000;
-        if (date.getTime() < now.getTime() - twelveHours) {
-            date.setDate(date.getDate() + 1);
+        if (dt.toMillis() < now.toMillis() - twelveHours) {
+            dt = dt.plus({ days: 1 });
         }
-        const t = date.getTime();
-        if (isNaN(t)) return NaN;
-        return t;
+
+        return dt.toMillis();
     }
 
     // 3) Fallback: try parsing as an ISO/standard date string

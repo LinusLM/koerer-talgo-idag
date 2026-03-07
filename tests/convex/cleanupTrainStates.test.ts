@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from '../../convex/schema';
+import { internal } from '@/convex/_generated/api';
 const modules = import.meta.glob('../../convex/**/*.ts') as Record<string, () => Promise<any>>;
 
 test('cleanupTrainStates removes old entries older than cutoff', async () => {
@@ -34,7 +35,9 @@ test('cleanupTrainStates removes old entries older than cutoff', async () => {
 
     // Run cleanup
     await t.run(async (ctx) => {
-        await ctx.runMutation((await import('../../convex/_generated/api')).api.cleanupTrainStates.cleanupTrainStates, {} as any);
+        await ctx.runMutation(internal.cleanupTrainStates.cleanupTrainStates
+
+        );
     });
 
     // Verify only recent remains

@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from '../../convex/schema';
-import { internal } from '@/convex/_generated/api';
+import { internal } from '../../convex/_generated/api';
 const modules = import.meta.glob('../../convex/**/*.ts') as Record<string, () => Promise<any>>;
 
 test('cleanupTrainStates removes old entries older than cutoff', async () => {

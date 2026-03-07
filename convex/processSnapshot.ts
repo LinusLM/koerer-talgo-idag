@@ -38,12 +38,13 @@ export const processSnapshot = internalAction({
     const notifications: Array<{ title: string; message: string }> = [];
     const stateUpdates: Array<{ stationId: string; trainId: string; wasTalgo: boolean; wasCancelled: boolean; departureTime?: number }> = [];
 
+    const referenceNow = Date.now();
     for (const train of snapshot.Trains ?? []) {
       const rawTime = train.ScheduleTimeDeparture ?? train.ScheduleTime ?? "";
       let departureTimeInMs = NaN;
       if (typeof rawTime === "string" && rawTime.trim() !== "") {
         try {
-          departureTimeInMs = parseMittogTime(rawTime);
+          departureTimeInMs = parseMittogTime(rawTime, { referenceNow });
         } catch (err) {
           if (DEBUG) console.log("Failed to parse departure time:", rawTime, err);
           departureTimeInMs = NaN;

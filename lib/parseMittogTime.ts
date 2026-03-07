@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 
-export function parseMittogTime(time: string) {
+export function parseMittogTime(time: string, options?: { referenceNow?: number; thresholdMs?: number }) {
     if (typeof time !== "string" || time.trim() === "") {
         return NaN;
     }
@@ -47,8 +47,13 @@ export function parseMittogTime(time: string) {
         if (!(minute >= 0 && minute <= 59)) return NaN;
         if (!(second >= 0 && second <= 59)) return NaN;
 
-        // Use Europe/Copenhagen 'now' for relative calculations
-        const now = DateTime.now().setZone('Europe/Copenhagen');
+        // Use Europe/Copenhagen 'now' for relative calculations. Allow deterministic
+        // parsing by accepting an optional `referenceNow` (ms since epoch) and
+        // `thresholdMs` to override the 12-hour heuristic.
+        const now = options && typeof options.referenceNow === 'number'
+            ? DateTime.fromMillis(options.referenceNow).setZone('Europe/Copenhagen')
+            : DateTime.now().setZone('Europe/Copenhagen');
+
         let dt = DateTime.fromObject(
             { year: now.year, month: now.month, day: now.day, hour, minute, second },
             { zone: 'Europe/Copenhagen' }
@@ -57,7 +62,9 @@ export function parseMittogTime(time: string) {
 
         // If the time appears to be significantly in the past (more than 12 hours),
         // assume the intended departure is the next day.
-        const twelveHours = 12 * 60 * 60 * 1000;
+        const twelveHours = (options && typeof options.thresholdMs === 'number')
+            ? options.thresholdMs
+            : 12 * 60 * 60 * 1000;
         if (dt.toMillis() < now.toMillis() - twelveHours) {
             dt = dt.plus({ days: 1 });
         }

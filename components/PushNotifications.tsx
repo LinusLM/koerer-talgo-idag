@@ -39,6 +39,9 @@ export default function PushNotificationManager() {
     null,
   );
   const [message, setMessage] = useState("");
+  const [permission, setPermission] = useState<string>(
+    typeof Notification !== "undefined" ? Notification.permission : "default",
+  );
   const sendNotification = useAction(api.push.sendNotification);
   const subscribeUser = useMutation(api.subscriptions.subscribeUser);
   const unsubscribeUser = useMutation(api.subscriptions.unsubscribeUser);
@@ -60,6 +63,9 @@ export default function PushNotificationManager() {
         console.error("Failed to register service worker:", err);
       });
     }
+    if (typeof Notification !== "undefined") {
+      setPermission(Notification.permission);
+    }
   }, []);
 
   async function registerServiceWorker() {
@@ -76,6 +82,16 @@ export default function PushNotificationManager() {
     }
   }
   async function subscribeToPush() {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "denied"
+    ) {
+      setMessage(
+        "Please allow notifications in your browser settings to subscribe.",
+      );
+      setPermission("denied");
+      return;
+    }
     const registration = await navigator.serviceWorker.ready;
     const sub = await registration.pushManager.subscribe({
       userVisibleOnly: true,
@@ -84,6 +100,8 @@ export default function PushNotificationManager() {
       ),
     });
     setSubscription(sub);
+    if (typeof Notification !== "undefined")
+      setPermission(Notification.permission);
 
     const serializedSub = JSON.parse(JSON.stringify(sub));
     await subscribeUser({
@@ -101,8 +119,6 @@ export default function PushNotificationManager() {
     await unsubscribeUser({ userId });
   }
 
-  
-
   if (!isSupported) {
     return <p>Push notifications are not supported in this browser.</p>;
   }
@@ -110,6 +126,13 @@ export default function PushNotificationManager() {
   return (
     <div>
       <h3>Push Notifications</h3>
+      {message ? (
+        <p className="muted">{message}</p>
+      ) : permission === "denied" ? (
+        <p style={{ color: "var(--danger)" }}>
+          Please allow notifications in your browser settings to receive alerts.
+        </p>
+      ) : null}
       {subscription ? (
         <>
           <p className="muted">You are subscribed.</p>
@@ -130,7 +153,9 @@ export default function PushNotificationManager() {
         </>
       ) : (
         <>
-          <p className="muted">You are not subscribed.</p>
+          {!(message || permission === "denied") && (
+            <p className="muted">You are not subscribed.</p>
+          )}
           <div style={{ marginTop: ".5rem" }}>
             <button onClick={subscribeToPush}>Subscribe</button>
           </div>

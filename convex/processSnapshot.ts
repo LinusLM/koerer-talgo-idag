@@ -30,9 +30,9 @@ export const processSnapshot = internalAction({
       stationId: stationId
     });
 
-    // Convert to map for fast lookup
+    // Convert to map for fast lookup (keyed by station+train to avoid cross-station collisions)
     const stateMap = new Map(
-      existingStates.map((s) => [s.trainId, s])
+      existingStates.map((s) => [`${s.stationId}::${s.trainId}`, s])
     );
 
     const notifications: Array<{ title: string; message: string }> = [];
@@ -89,7 +89,8 @@ export const processSnapshot = internalAction({
       // Use canonical parsed departure time from above
       const departureTimestamp = departureTimeInMs;
 
-      const existing = stateMap.get(trainId);
+      // Lookup by composite key: stationId + trainId (same train may pass multiple stations)
+      const existing = stateMap.get(`${stationId}::${trainId}`);
 
       if (DEBUG) {
         console.log("Train", trainId, "Talgo:", talgoNow, "Cancelled:", cancelledNow);

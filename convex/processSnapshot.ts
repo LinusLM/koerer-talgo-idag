@@ -30,20 +30,21 @@ export const processSnapshot = internalAction({
       stationId: stationId
     });
 
-    // Convert to map for fast lookup
+    // Convert to map for fast lookup (keyed by station+train to avoid cross-station collisions)
     const stateMap = new Map(
-      existingStates.map((s) => [s.trainId, s])
+      existingStates.map((s) => [`${s.stationId}::${s.trainId}`, s])
     );
 
     const notifications: Array<{ title: string; message: string }> = [];
     const stateUpdates: Array<{ stationId: string; trainId: string; wasTalgo: boolean; wasCancelled: boolean; departureTime?: number }> = [];
 
+    const referenceNow = Date.now();
     for (const train of snapshot.Trains ?? []) {
       const rawTime = train.ScheduleTimeDeparture ?? train.ScheduleTime ?? "";
       let departureTimeInMs = NaN;
       if (typeof rawTime === "string" && rawTime.trim() !== "") {
         try {
-          departureTimeInMs = parseMittogTime(rawTime);
+          departureTimeInMs = parseMittogTime(rawTime, { referenceNow });
         } catch (err) {
           if (DEBUG) console.log("Failed to parse departure time:", rawTime, err);
           departureTimeInMs = NaN;
@@ -89,7 +90,8 @@ export const processSnapshot = internalAction({
       // Use canonical parsed departure time from above
       const departureTimestamp = departureTimeInMs;
 
-      const existing = stateMap.get(trainId);
+      // Lookup by composite key: stationId + trainId (same train may pass multiple stations)
+      const existing = stateMap.get(`${stationId}::${trainId}`);
 
       if (DEBUG) {
         console.log("Train", trainId, "Talgo:", talgoNow, "Cancelled:", cancelledNow);

@@ -9,11 +9,15 @@
     "lint": "eslint",
     "dev:pwa": "next dev & ngrok http 3000",
     "dev:https": "next dev --experimental-https ",
-    "test": "vitest"
+    "test": "vitest",
+    "test:debug": "vitest --inspect-brk --no-file-parallelism",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text"
   },
   "dependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "convex": "^1.32.0",
     "convex-test": "^0.0.41",
+    "luxon": "^3.5.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -22,11 +26,13 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/luxon": "^3.7.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "prettier": "^3.8.1",

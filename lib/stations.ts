@@ -10,6 +10,8 @@ const stationCodeMap: Record<string, string> = {
     pa: "Padborg",
     hmb: "Hamborg Hbf",
     ap: "Pinneberg",
+    rg: "Ringsted St",
+    kd: "Kolding St"
 }
 
 export function removeAmpersandFromCode(code: string): string {

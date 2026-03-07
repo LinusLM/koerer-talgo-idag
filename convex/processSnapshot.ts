@@ -3,6 +3,7 @@ import { isTalgo } from "../lib/talgo";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { removeAmpersandFromCode } from "../lib/stations";
+import { parseMittogTime } from "../lib/parseMittogTime";
 
 const DEBUG = process.env.DEBUG_MITTOG === "true";
 
@@ -50,7 +51,7 @@ export const processSnapshot = internalAction({
       }
 
       const currentTime = Date.now();
-      const maxFutureTime = 8 * 60 * 60 * 1000; // 8 hours
+      const maxFutureTime = 2 * 60 * 60 * 1000; // 2 hours
 
       // If we couldn't parse a valid departure time, skip this train.
       if (!Number.isFinite(departureTimeInMs)) {
@@ -95,8 +96,6 @@ export const processSnapshot = internalAction({
       }
 
       // Check for state changes that require notifications
-      let stateChanged = false;
-
       // 🚄 TALGO SWITCHED IN
       if (!existing?.wasTalgo && talgoNow) {
         if (DEBUG) console.log("Talgo switched IN:", trainId);
@@ -104,7 +103,6 @@ export const processSnapshot = internalAction({
           title: "Talgo fundet ved " + removeAmpersandFromCode(stationId),
           message: formatNotification(train)
         });
-        stateChanged = true;
       }
 
       // 🚄 TALGO SWITCHED OUT  
@@ -114,7 +112,6 @@ export const processSnapshot = internalAction({
           title: `Talgo fjernet ved ${removeAmpersandFromCode(stationId)}`,
           message: formatNotification(train)
         });
-        stateChanged = true;
       }
 
       // 🚫 CANCELLATION (only for TALGO trains)
@@ -124,7 +121,6 @@ export const processSnapshot = internalAction({
           title: `Talgo aflyst ved ${removeAmpersandFromCode(stationId)}`,
           message: formatNotification(train)
         });
-        stateChanged = true;
       }
 
       // Always track the current state for batch update (only if state changed or new train)
@@ -155,39 +151,7 @@ export const processSnapshot = internalAction({
   },
 });
 
-function parseMittogTime(time: string) {
-  if (typeof time !== "string" || time.trim() === "") {
-    return NaN;
-  }
 
-  // Expected format: DD-MM-YYYY HH:mm (allow 1-2 digit day/month/hour)
-  // Expected formats: DD-MM-YYYY HH:mm or DD-MM-YYYY HH:mm:ss
-  // allow 1-2 digit day/month/hour and optional seconds
-  const re = /^(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
-  const m = re.exec(time.trim());
-  if (!m) {
-    return NaN;
-  }
-
-  const day = Number(m[1]);
-  const month = Number(m[2]);
-  const year = Number(m[3]);
-  const hour = Number(m[4]);
-  const minute = Number(m[5]);
-  const second = m[6] ? Number(m[6]) : 0;
-
-  // Validate ranges
-  if (!(month >= 1 && month <= 12)) return NaN;
-  if (!(day >= 1 && day <= 31)) return NaN;
-  if (!(hour >= 0 && hour <= 23)) return NaN;
-  if (!(minute >= 0 && minute <= 59)) return NaN;
-  if (!(second >= 0 && second <= 59)) return NaN;
-
-  const date = new Date(year, month - 1, day, hour, minute, second);
-  const t = date.getTime();
-  if (isNaN(t)) return NaN;
-  return t;
-}
 
 async function notifyStationSubscribers(
   ctx: any,
@@ -213,12 +177,15 @@ function formatNotification(train: Train): string {
   const destination = removeAmpersandFromCode(train.Routes?.[0]?.DestinationStationId ?? "");
   let time = "unknown time";
   if (departureTime) {
-    const date = new Date(departureTime);
-    if (!isNaN(date.getTime())) {
-      time = date.toLocaleTimeString("da-DK", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }).replace(".", ":");
+    const parsed = parseMittogTime(String(departureTime));
+    if (Number.isFinite(parsed)) {
+      const date = new Date(parsed);
+      time = date
+        .toLocaleTimeString("da-DK", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+        .replace(".", ":");
     }
   }
   const trainNumber = `${product}${trainId}`;
